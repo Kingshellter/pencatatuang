@@ -1,19 +1,66 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --accent: oklch(0.55 0.17 264);
+  --accent-soft: oklch(0.55 0.17 264 / 0.10);
+  --radius: 18px;
+  --bg: oklch(0.975 0.004 95);
+  --surface: #ffffff;
+  --ink: oklch(0.23 0.012 262);
+  --muted: oklch(0.56 0.012 262);
+  --faint: oklch(0.70 0.010 262);
+  --line: oklch(0.925 0.004 262);
+  --hero: oklch(0.205 0.018 263);
+  --hero-line: oklch(0.30 0.02 263);
+  --income: oklch(0.62 0.13 158);
+  --expense: oklch(0.60 0.17 18);
+  --gap: 22px;
+  font-synthesis: none;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-jakarta), -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+  line-height: 1.45;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+::placeholder {
+  color: var(--faint);
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  padding: 0;
+}
+
+input {
+  font-family: inherit;
+}
+
+input:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+button:not(:disabled):active {
+  transform: translateY(1px);
 }
