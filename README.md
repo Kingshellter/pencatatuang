@@ -1,40 +1,66 @@
-<<<<<<< HEAD
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# pencatatuang
 
-## Getting Started
+Money recorder app. Next.js frontend + NestJS API (Prisma + SQLite) with Gemini AI and optional Telegram bot.
 
-First, run the development server:
+## Structure
+
+- `/` — Next.js 16 frontend (App Router)
+- `/api` — NestJS backend
+- `/mcp-server` — MCP server
+
+## Prerequisites
+
+- Node.js 20+
+- npm
+
+## Setup
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# frontend
+npm install
+
+# api
+cd api
+npm install
+cp .env.example .env   # then fill in keys
+npx prisma generate
+npx prisma migrate dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Env vars (api/.env)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+DATABASE_URL="file:./dev.db"
+GEMINI_API_KEY="your_gemini_key"
+TELEGRAM_BOT_TOKEN="your_telegram_bot_token"
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Gemini key: https://aistudio.google.com/apikey
+- Telegram token optional (falls back to `DUMMY` if absent)
 
-## Learn More
+## Run
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+# frontend — http://localhost:3000
+npm run dev
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# api — http://localhost:3001
+cd api && npm run start:dev
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+API CORS allows `http://localhost:3000`.
 
-## Deploy on Vercel
+## Scripts
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Frontend (root):
+- `npm run dev` — Next.js dev server
+- `npm run build` — production build
+- `npm run start` — start built app
+- `npm run lint` — ESLint
+- `npm run mcp` — run MCP server
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-=======
-# moneyrecorder
->>>>>>> 870a6f4492b3e51d4f7d41ea57079a605fd5aec1
+API (`api/`):
+- `npm run start:dev` — watch mode
+- `npm run start:prod` — production
+- `npm run test` — Jest
+- `npm run test:e2e` — e2e tests
