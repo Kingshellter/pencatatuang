@@ -9,15 +9,21 @@ import * as dotenv from 'dotenv';
 
 dotenv.config(); // Memuat variabel .env
 
+const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
+const telegramEnabled = !!telegramToken && telegramToken !== 'DUMMY';
+
 @Module({
   imports: [
     TransactionsModule,
     AiModule,
-    TelegrafModule.forRoot({
-      token: process.env.TELEGRAM_BOT_TOKEN || 'DUMMY',
-    }),
+    ...(telegramEnabled
+      ? [TelegrafModule.forRoot({ token: telegramToken! })]
+      : []),
   ],
   controllers: [AppController],
-  providers: [AppService, TelegramUpdate],
+  providers: [
+    AppService,
+    ...(telegramEnabled ? [TelegramUpdate] : []),
+  ],
 })
 export class AppModule {}

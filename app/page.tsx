@@ -139,13 +139,23 @@ export default function Home() {
   const [flash, setFlash] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const descRef = useRef<HTMLInputElement>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchTx = async () => {
+  useEffect(() => {
+    return () => {
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+    };
+  }, []);
+
+  const fetchTx = async (signal?: AbortSignal) => {
     try {
-      const res = await fetch(`${API_BASE}/transactions`);
-      const data: Transaction[] = await res.json();
-      setTx(data);
+      const res = await fetch(`${API_BASE}/transactions`, { signal });
+      if (!res.ok) throw new Error(`GET /transactions ${res.status}`);
+      const data = await res.json();
+      if (!Array.isArray(data)) throw new Error("Unexpected response shape");
+      setTx(data as Transaction[]);
     } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") return;
       console.error("Failed to load transactions", err);
     } finally {
       setLoading(false);
@@ -153,7 +163,9 @@ export default function Home() {
   };
 
   useEffect(() => {
-    fetchTx();
+    const ctrl = new AbortController();
+    fetchTx(ctrl.signal);
+    return () => ctrl.abort();
   }, []);
 
   const income = useMemo(
@@ -194,10 +206,15 @@ export default function Home() {
           type,
         }),
       });
-      const entry: Transaction = await res.json();
+      if (!res.ok) throw new Error(`POST /transactions ${res.status}`);
+      const entry = (await res.json()) as Transaction;
+      if (typeof entry?.id !== "number") {
+        throw new Error("Unexpected response shape");
+      }
       setTx((prev) => [entry, ...prev]);
       setFlash(entry.id);
-      setTimeout(() => setFlash(null), 900);
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+      flashTimer.current = setTimeout(() => setFlash(null), 900);
       setDesc("");
       setAmount("");
       descRef.current?.focus();
@@ -213,7 +230,10 @@ export default function Home() {
     const prev = tx;
     setTx((cur) => cur.filter((x) => x.id !== id));
     try {
-      await fetch(`${API_BASE}/transactions/${id}`, { method: "DELETE" });
+      const res = await fetch(`${API_BASE}/transactions/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error(`DELETE /transactions/${id} ${res.status}`);
     } catch (err) {
       console.error("Failed to delete", err);
       setTx(prev);
@@ -222,16 +242,19 @@ export default function Home() {
 
   async function clearAll() {
     if (!confirm("Clear all transactions?")) return;
-    const prev = tx;
     setTx([]);
-    try {
-      await Promise.all(
-        prev.map((x) =>
-          fetch(`${API_BASE}/transactions/${x.id}`, { method: "DELETE" })
+    const results = await Promise.allSettled(
+      tx.map((x) =>
+        fetch(`${API_BASE}/transactions/${x.id}`, { method: "DELETE" }).then(
+          (r) => {
+            if (!r.ok) throw new Error(`DELETE ${x.id} ${r.status}`);
+          }
         )
-      );
-    } catch (err) {
-      console.error("Failed to clear", err);
+      )
+    );
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) {
+      console.error(`Failed to delete ${failed} transactions`);
       fetchTx();
     }
   }
