@@ -11,5 +11,6 @@ model Transaction {
   amount      Float
   description String
   type        String   // "income" | "expense"
+  category    String?
   createdAt   DateTime @default(now())
 }

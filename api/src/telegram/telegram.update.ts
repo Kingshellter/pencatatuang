@@ -45,6 +45,7 @@ export class TelegramUpdate {
       amount: amount,
       description: 'Topup via Telegram',
       type: 'income',
+      category: 'other-in',
     });
 
     const summary = await this.transactionsService.getSummary();
@@ -72,17 +73,24 @@ export class TelegramUpdate {
           );
         }
 
+        const txType = data.type === 'income' ? 'income' : 'expense';
         await this.transactionsService.create({
           amount: Number(data.amount),
           description: data.description || 'Dari Telegram Text',
-          type: data.type === 'income' ? 'income' : 'expense',
+          type: txType,
+          category:
+            typeof data.category === 'string' && data.category
+              ? data.category
+              : txType === 'income'
+                ? 'other-in'
+                : 'other-out',
         });
 
         await ctx.telegram.editMessageText(
           ctx.chat!.id,
           loadingMessage.message_id,
           undefined,
-          `✅ Berhasil dicatat ke database!\n💰 Rp ${data.amount}\n📝 ${data.description}\n🏷️ ${data.type}`,
+          `✅ Berhasil dicatat ke database!\n💰 Rp ${data.amount}\n📝 ${data.description}\n🏷️ ${data.type}${data.category ? ` (${data.category})` : ''}`,
         );
       } catch (error: any) {
         await ctx.telegram.editMessageText(
@@ -132,13 +140,17 @@ export class TelegramUpdate {
           amount: Number(data.amount),
           description: data.description || 'Dari Struk LLaVa',
           type: data.type === 'income' ? 'income' : 'expense',
+          category:
+            typeof data.category === 'string' && data.category
+              ? data.category
+              : 'other-out',
         });
 
         await ctx.telegram.editMessageText(
           ctx.chat!.id,
           loadingMessage.message_id,
           undefined,
-          `🛒 Struk Berhasil Diproses & Disimpan!\n💰 Rp ${data.amount}\n📝 ${data.description}`,
+          `🛒 Struk Berhasil Diproses & Disimpan!\n💰 Rp ${data.amount}\n📝 ${data.description}${data.category ? `\n🏷️ ${data.category}` : ''}`,
         );
       } catch (error: any) {
         console.error(error);

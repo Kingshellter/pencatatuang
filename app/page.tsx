@@ -13,12 +13,46 @@ import {
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
+type TxType = "income" | "expense";
+
 interface Transaction {
   id: number;
   amount: number;
   description: string;
-  type: "income" | "expense";
+  type: TxType;
+  category: string | null;
   createdAt: string;
+}
+
+interface Category {
+  id: string;
+  label: string;
+  color: string;
+}
+
+const CATS: Record<TxType, Category[]> = {
+  income: [
+    { id: "salary", label: "Salary", color: "#0f9d76" },
+    { id: "business", label: "Business", color: "#0e8a8a" },
+    { id: "gift", label: "Gift", color: "#7a5ae0" },
+    { id: "other-in", label: "Other", color: "#7c8598" },
+  ],
+  expense: [
+    { id: "food", label: "Food & Drink", color: "#e0791f" },
+    { id: "transport", label: "Transport", color: "#3b82f6" },
+    { id: "shopping", label: "Shopping", color: "#a855f7" },
+    { id: "bills", label: "Bills", color: "#ef4444" },
+    { id: "fun", label: "Entertainment", color: "#ec4899" },
+    { id: "health", label: "Health", color: "#10b981" },
+    { id: "other-out", label: "Other", color: "#7c8598" },
+  ],
+};
+const ALL_CATS = [...CATS.income, ...CATS.expense];
+
+function catOf(x: Transaction): Category {
+  const found = ALL_CATS.find((c) => c.id === x.category);
+  if (found) return found;
+  return x.type === "income" ? CATS.income[3] : CATS.expense[6];
 }
 
 const groupInt = (n: number) =>
@@ -27,6 +61,14 @@ const groupInt = (n: number) =>
 function rupiah(n: number, withSign = false) {
   const sign = n < 0 ? "−" : withSign ? "+" : "";
   return `${sign}Rp ${groupInt(n)}`;
+}
+
+function compact(n: number) {
+  const a = Math.abs(n);
+  if (a >= 1e9) return (n / 1e9).toFixed(a % 1e9 === 0 ? 0 : 1) + "B";
+  if (a >= 1e6) return (n / 1e6).toFixed(a % 1e6 === 0 ? 0 : 1) + "M";
+  if (a >= 1e3) return (n / 1e3).toFixed(a % 1e3 === 0 ? 0 : 1) + "k";
+  return String(Math.round(n));
 }
 
 function relTime(ts: string | number) {
@@ -126,9 +168,55 @@ const Icon = {
       <path d="M4 16l5-6 4 4 6-8" />
     </svg>
   ),
+  chevron: (p: SVGProps<SVGSVGElement>) => (
+    <svg
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...p}
+    >
+      <path d="M9 6l6 6-6 6" />
+    </svg>
+  ),
+  pie: (p: SVGProps<SVGSVGElement>) => (
+    <svg
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...p}
+    >
+      <path d="M12 3a9 9 0 109 9h-9V3z" />
+      <path d="M12 3v9h9" opacity="0.45" />
+    </svg>
+  ),
 };
 
-type TxType = "income" | "expense";
+function hexA(hex: string, a: number) {
+  if (/^#([0-9a-f]{6})$/i.test(hex)) {
+    const n = parseInt(hex.slice(1), 16);
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+  }
+  return `color-mix(in oklch, ${hex} ${a * 100}%, transparent)`;
+}
+
+interface Period {
+  y: number;
+  m: number;
+}
+
+function startOfMonth(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+}
 
 export default function Home() {
   const [tx, setTx] = useState<Transaction[]>([]);
@@ -136,8 +224,14 @@ export default function Home() {
   const [desc, setDesc] = useState("");
   const [amount, setAmount] = useState("");
   const [type, setType] = useState<TxType>("income");
+  const [cat, setCat] = useState<string>(CATS.income[0].id);
   const [flash, setFlash] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const now = useMemo(() => new Date(), []);
+  const [period, setPeriod] = useState<Period | null>({
+    y: now.getFullYear(),
+    m: now.getMonth(),
+  });
   const descRef = useRef<HTMLInputElement>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -146,6 +240,11 @@ export default function Home() {
       if (flashTimer.current) clearTimeout(flashTimer.current);
     };
   }, []);
+
+  useEffect(() => {
+    const list = CATS[type];
+    if (!list.find((c) => c.id === cat)) setCat(list[0].id);
+  }, [type, cat]);
 
   const fetchTx = async (signal?: AbortSignal) => {
     try {
@@ -184,16 +283,54 @@ export default function Home() {
   );
   const balance = income - expense;
 
+  const filtered = useMemo(() => {
+    if (!period) return tx;
+    return tx.filter((x) => {
+      const d = new Date(x.createdAt);
+      return d.getFullYear() === period.y && d.getMonth() === period.m;
+    });
+  }, [tx, period]);
+
+  const pIncome = useMemo(
+    () =>
+      filtered
+        .filter((x) => x.type === "income")
+        .reduce((a, b) => a + b.amount, 0),
+    [filtered]
+  );
+  const pExpense = useMemo(
+    () =>
+      filtered
+        .filter((x) => x.type === "expense")
+        .reduce((a, b) => a + b.amount, 0),
+    [filtered]
+  );
+
+  const breakdown = useMemo(() => {
+    const map: Record<
+      string,
+      { label: string; color: string; value: number }
+    > = {};
+    filtered
+      .filter((x) => x.type === "expense")
+      .forEach((x) => {
+        const c = catOf(x);
+        map[c.id] = map[c.id] || {
+          label: c.label,
+          color: c.color,
+          value: 0,
+        };
+        map[c.id].value += x.amount;
+      });
+    return Object.values(map).sort((a, b) => b.value - a.value);
+  }, [filtered]);
+
   const amountNum =
     parseInt(String(amount).replace(/\D/g, ""), 10) || 0;
   const canAdd = amountNum > 0 && !submitting;
 
   async function submit() {
     if (!canAdd) return;
-    if (type === "expense" && amountNum > balance) {
-      alert("Insufficient balance.");
-      return;
-    }
     setSubmitting(true);
     try {
       const res = await fetch(`${API_BASE}/transactions`, {
@@ -202,8 +339,11 @@ export default function Home() {
         body: JSON.stringify({
           amount: amountNum,
           description:
-            desc.trim() || (type === "income" ? "Income" : "Expense"),
+            desc.trim() ||
+            CATS[type].find((c) => c.id === cat)?.label ||
+            (type === "income" ? "Income" : "Expense"),
           type,
+          category: cat,
         }),
       });
       if (!res.ok) throw new Error(`POST /transactions ${res.status}`);
@@ -212,6 +352,13 @@ export default function Home() {
         throw new Error("Unexpected response shape");
       }
       setTx((prev) => [entry, ...prev]);
+      const d = new Date(entry.createdAt);
+      if (
+        period &&
+        (period.y !== d.getFullYear() || period.m !== d.getMonth())
+      ) {
+        setPeriod({ y: d.getFullYear(), m: d.getMonth() });
+      }
       setFlash(entry.id);
       if (flashTimer.current) clearTimeout(flashTimer.current);
       flashTimer.current = setTimeout(() => setFlash(null), 900);
@@ -241,10 +388,11 @@ export default function Home() {
   }
 
   async function clearAll() {
-    if (!confirm("Clear all transactions?")) return;
+    if (!confirm("Clear ALL transactions (all months)?")) return;
+    const prev = tx;
     setTx([]);
     const results = await Promise.allSettled(
-      tx.map((x) =>
+      prev.map((x) =>
         fetch(`${API_BASE}/transactions/${x.id}`, { method: "DELETE" }).then(
           (r) => {
             if (!r.ok) throw new Error(`DELETE ${x.id} ${r.status}`);
@@ -258,6 +406,29 @@ export default function Home() {
       fetchTx();
     }
   }
+
+  const curMonthStart = startOfMonth(now);
+  const atCurrent =
+    !!period &&
+    startOfMonth(new Date(period.y, period.m, 1)) >= curMonthStart;
+
+  function shiftMonth(delta: number) {
+    const base = period
+      ? new Date(period.y, period.m, 1)
+      : new Date(now.getFullYear(), now.getMonth(), 1);
+    const next = new Date(base.getFullYear(), base.getMonth() + delta, 1);
+    if (next.getTime() > curMonthStart) return;
+    setPeriod({ y: next.getFullYear(), m: next.getMonth() });
+  }
+
+  const periodLabel = !period
+    ? "All time"
+    : period.y === now.getFullYear() && period.m === now.getMonth()
+      ? "This month"
+      : new Date(period.y, period.m, 1).toLocaleDateString("en-US", {
+          month: "long",
+          year: "numeric",
+        });
 
   return (
     <div style={S.page}>
@@ -282,7 +453,7 @@ export default function Home() {
           <div style={S.heroTop}>
             <span style={S.heroLabel}>Total Balance</span>
             <span style={S.heroBadge}>
-              <Icon.spark style={{ color: "var(--accent)" }} /> Live
+              <Icon.spark style={{ color: "var(--accent)" }} /> All time
             </span>
           </div>
           <div style={S.heroAmount} className="tnum">
@@ -306,87 +477,219 @@ export default function Home() {
           </div>
         </section>
 
-        <div style={S.grid}>
-          <section style={S.card}>
-            <h2 style={S.cardTitle}>Record a transaction</h2>
-            <p style={S.cardHint}>Log money coming in or going out.</p>
-
-            <div style={S.seg}>
-              <button
-                onClick={() => setType("income")}
-                style={{
-                  ...S.segBtn,
-                  ...(type === "income"
-                    ? S.segOn("var(--income)")
-                    : {}),
-                }}
-              >
-                <Icon.up width="15" height="15" /> Income
-              </button>
-              <button
-                onClick={() => setType("expense")}
-                style={{
-                  ...S.segBtn,
-                  ...(type === "expense"
-                    ? S.segOn("var(--expense)")
-                    : {}),
-                }}
-              >
-                <Icon.down width="15" height="15" /> Expense
-              </button>
-            </div>
-
-            <label style={S.field}>
-              <span style={S.fieldLab}>Description</span>
-              <input
-                ref={descRef}
-                style={S.input}
-                value={desc}
-                onChange={(e) => setDesc(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && submit()}
-                placeholder="e.g. Lunch, Salary, Coffee"
-              />
-            </label>
-
-            <label style={S.field}>
-              <span style={S.fieldLab}>Amount</span>
-              <div style={S.amountWrap}>
-                <span style={S.rp}>Rp</span>
-                <input
-                  style={{ ...S.input, ...S.amountInput }}
-                  inputMode="numeric"
-                  className="tnum"
-                  value={amount ? groupInt(amountNum) : ""}
-                  onChange={(e) =>
-                    setAmount(e.target.value.replace(/\D/g, ""))
-                  }
-                  onKeyDown={(e) => e.key === "Enter" && submit()}
-                  placeholder="0"
-                />
-              </div>
-            </label>
-
+        <div style={S.filterBar}>
+          <div style={S.monthNav}>
             <button
-              onClick={submit}
-              disabled={!canAdd}
-              style={{
-                ...S.submit,
-                background: canAdd ? `var(--${type})` : "var(--line)",
-                color: canAdd ? "#fff" : "var(--faint)",
-                cursor: canAdd ? "pointer" : "not-allowed",
-                boxShadow: canAdd
-                  ? `0 8px 20px color-mix(in oklch, var(--${type}) 32%, transparent)`
-                  : "none",
-              }}
+              style={S.navBtn}
+              onClick={() => shiftMonth(-1)}
+              title="Previous month"
             >
-              {type === "income" ? "Add income" : "Add expense"}
-              {canAdd ? `  ·  ${rupiah(amountNum, true)}` : ""}
+              <Icon.chevron style={{ transform: "rotate(180deg)" }} />
             </button>
-          </section>
+            <div style={S.periodLabel}>{periodLabel}</div>
+            <button
+              style={{
+                ...S.navBtn,
+                opacity: atCurrent || !period ? 0.35 : 1,
+                pointerEvents:
+                  atCurrent || !period ? "none" : "auto",
+              }}
+              onClick={() => shiftMonth(1)}
+              title="Next month"
+            >
+              <Icon.chevron />
+            </button>
+          </div>
+          <button
+            style={{
+              ...S.allTimeBtn,
+              ...(!period ? S.allTimeOn : {}),
+            }}
+            onClick={() =>
+              setPeriod(
+                period ? null : { y: now.getFullYear(), m: now.getMonth() }
+              )
+            }
+          >
+            {period ? "View all time" : "Back to monthly"}
+          </button>
+        </div>
+
+        <div style={S.grid}>
+          <div style={S.col}>
+            <section style={S.card}>
+              <h2 style={S.cardTitle}>Record a transaction</h2>
+              <p style={S.cardHint}>Log money coming in or going out.</p>
+
+              <div style={S.seg}>
+                <button
+                  onClick={() => setType("income")}
+                  style={{
+                    ...S.segBtn,
+                    ...(type === "income"
+                      ? S.segOn("var(--income)")
+                      : {}),
+                  }}
+                >
+                  <Icon.up width="15" height="15" /> Income
+                </button>
+                <button
+                  onClick={() => setType("expense")}
+                  style={{
+                    ...S.segBtn,
+                    ...(type === "expense"
+                      ? S.segOn("var(--expense)")
+                      : {}),
+                  }}
+                >
+                  <Icon.down width="15" height="15" /> Expense
+                </button>
+              </div>
+
+              <div style={S.field}>
+                <span style={S.fieldLab}>Category</span>
+                <div style={S.catWrap}>
+                  {CATS[type].map((c) => {
+                    const on = c.id === cat;
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => setCat(c.id)}
+                        style={{
+                          ...S.catChip,
+                          ...(on
+                            ? {
+                                borderColor: c.color,
+                                background: hexA(c.color, 0.1),
+                                color: "var(--ink)",
+                              }
+                            : {}),
+                        }}
+                      >
+                        <span style={{ ...S.dot, background: c.color }} />
+                        {c.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <label style={S.field}>
+                <span style={S.fieldLab}>
+                  Description <span style={S.opt}>(optional)</span>
+                </span>
+                <input
+                  ref={descRef}
+                  style={S.input}
+                  value={desc}
+                  onChange={(e) => setDesc(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && submit()}
+                  placeholder="e.g. Lunch, Salary, Coffee"
+                />
+              </label>
+
+              <label style={S.field}>
+                <span style={S.fieldLab}>Amount</span>
+                <div style={S.amountWrap}>
+                  <span style={S.rp}>Rp</span>
+                  <input
+                    style={{ ...S.input, ...S.amountInput }}
+                    inputMode="numeric"
+                    className="tnum"
+                    value={amount ? groupInt(amountNum) : ""}
+                    onChange={(e) =>
+                      setAmount(e.target.value.replace(/\D/g, ""))
+                    }
+                    onKeyDown={(e) => e.key === "Enter" && submit()}
+                    placeholder="0"
+                  />
+                </div>
+              </label>
+
+              <button
+                onClick={submit}
+                disabled={!canAdd}
+                style={{
+                  ...S.submit,
+                  background: canAdd ? `var(--${type})` : "var(--line)",
+                  color: canAdd ? "#fff" : "var(--faint)",
+                  cursor: canAdd ? "pointer" : "not-allowed",
+                  boxShadow: canAdd
+                    ? `0 8px 20px color-mix(in oklch, var(--${type}) 32%, transparent)`
+                    : "none",
+                }}
+              >
+                {type === "income" ? "Add income" : "Add expense"}
+                {canAdd ? `  ·  ${rupiah(amountNum, true)}` : ""}
+              </button>
+            </section>
+
+            <section style={S.card}>
+              <div style={S.histHead}>
+                <h2 style={S.cardTitle}>Spending breakdown</h2>
+                <span style={S.periodTag}>{periodLabel}</span>
+              </div>
+
+              {breakdown.length === 0 ? (
+                <div style={S.emptySm}>
+                  <div
+                    style={{
+                      ...S.emptyIcon,
+                      width: 50,
+                      height: 50,
+                      borderRadius: 15,
+                      marginBottom: 12,
+                    }}
+                  >
+                    <Icon.pie />
+                  </div>
+                  <div style={S.emptyTitle}>
+                    No spending {period ? "this period" : "yet"}
+                  </div>
+                  <div style={S.emptyText}>
+                    Add an expense to see where your money goes.
+                  </div>
+                </div>
+              ) : (
+                <div style={S.breakWrap}>
+                  <Donut data={breakdown} total={pExpense} />
+                  <div style={S.legend}>
+                    {breakdown.map((d) => (
+                      <div key={d.label} style={S.legendRow}>
+                        <span
+                          style={{ ...S.dot, background: d.color }}
+                        />
+                        <span style={S.legendLabel}>{d.label}</span>
+                        <span style={S.legendPct} className="tnum">
+                          {Math.round((d.value / pExpense) * 100)}%
+                        </span>
+                        <span style={S.legendVal} className="tnum">
+                          Rp {groupInt(d.value)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+          </div>
 
           <section style={S.card}>
             <div style={S.histHead}>
-              <h2 style={S.cardTitle}>History</h2>
+              <div>
+                <h2 style={S.cardTitle}>History</h2>
+                <div style={S.histSub} className="tnum">
+                  <span style={{ color: "var(--income)" }}>
+                    +Rp {groupInt(pIncome)}
+                  </span>
+                  <span style={S.histDot}>·</span>
+                  <span style={{ color: "var(--expense)" }}>
+                    −Rp {groupInt(pExpense)}
+                  </span>
+                  <span style={S.histDot}>·</span>
+                  <span style={{ color: "var(--muted)" }}>{periodLabel}</span>
+                </div>
+              </div>
               {tx.length > 0 && (
                 <button style={S.clearBtn} onClick={clearAll}>
                   Clear all
@@ -398,19 +701,25 @@ export default function Home() {
               <div style={S.empty}>
                 <div style={S.emptyText}>Loading…</div>
               </div>
-            ) : tx.length === 0 ? (
+            ) : filtered.length === 0 ? (
               <div style={S.empty}>
                 <div style={S.emptyIcon}>
                   <Icon.wallet width="26" height="26" />
                 </div>
-                <div style={S.emptyTitle}>No transactions yet</div>
+                <div style={S.emptyTitle}>
+                  {tx.length === 0
+                    ? "No transactions yet"
+                    : "Nothing in " + periodLabel.toLowerCase()}
+                </div>
                 <div style={S.emptyText}>
-                  Your recorded income and expenses will appear here.
+                  {tx.length === 0
+                    ? "Your recorded income and expenses will appear here."
+                    : "Try another month or view all time."}
                 </div>
               </div>
             ) : (
               <div style={S.list}>
-                {tx.map((x) => (
+                {filtered.map((x) => (
                   <Row
                     key={x.id}
                     x={x}
@@ -424,6 +733,69 @@ export default function Home() {
         </div>
 
         <footer style={S.footer}>Synced with your account.</footer>
+      </div>
+    </div>
+  );
+}
+
+function Donut({
+  data,
+  total,
+}: {
+  data: { label: string; color: string; value: number }[];
+  total: number;
+}) {
+  const size = 150;
+  const stroke = 24;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  let acc = 0;
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: size,
+        height: size,
+        flexShrink: 0,
+      }}
+    >
+      <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="var(--line)"
+          strokeWidth={stroke}
+        />
+        {total > 0 &&
+          data.map((d, i) => {
+            const frac = d.value / total;
+            const len = frac * c;
+            const gap = c - len;
+            const off = -acc * c;
+            acc += frac;
+            return (
+              <circle
+                key={i}
+                cx={size / 2}
+                cy={size / 2}
+                r={r}
+                fill="none"
+                stroke={d.color}
+                strokeWidth={stroke}
+                strokeDasharray={`${Math.max(len - 2, 0)} ${gap + 2}`}
+                strokeDashoffset={off}
+                strokeLinecap="butt"
+              />
+            );
+          })}
+      </svg>
+      <div style={S.donutCenter}>
+        <div style={S.donutLab}>Spent</div>
+        <div style={S.donutVal} className="tnum">
+          Rp {compact(total)}
+        </div>
       </div>
     </div>
   );
@@ -472,6 +844,7 @@ function Row({
 }) {
   const [hover, setHover] = useState(false);
   const inc = x.type === "income";
+  const c = catOf(x);
   return (
     <div
       style={{ ...S.row, ...(flash ? S.rowFlash : {}) }}
@@ -481,8 +854,8 @@ function Row({
       <div
         style={{
           ...S.rowIcon,
-          color: `var(--${x.type})`,
-          background: `color-mix(in oklch, var(--${x.type}) 14%, transparent)`,
+          color: c.color,
+          background: hexA(c.color, 0.14),
         }}
       >
         {inc ? (
@@ -493,8 +866,11 @@ function Row({
       </div>
       <div style={S.rowMid}>
         <div style={S.rowDesc}>{x.description}</div>
-        <div style={S.rowTime} className="tnum">
-          {relTime(x.createdAt)}
+        <div style={S.rowMeta}>
+          <span style={{ ...S.miniDot, background: c.color }} />
+          <span style={S.rowCat}>{c.label}</span>
+          <span style={S.histDot}>·</span>
+          <span className="tnum">{relTime(x.createdAt)}</span>
         </div>
       </div>
       <div
@@ -559,7 +935,7 @@ const S = {
     color: "#fff",
     borderRadius: "calc(var(--radius) + 6px)",
     padding: "30px 34px 26px",
-    marginBottom: "var(--gap)",
+    marginBottom: 14,
     boxShadow: "0 24px 50px -28px rgba(16,18,40,0.6)",
   },
   heroGlow: {
@@ -646,11 +1022,65 @@ const S = {
     marginTop: 1,
   },
 
+  filterBar: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: "var(--gap)",
+  },
+  monthNav: {
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+    background: "var(--surface)",
+    border: "1px solid var(--line)",
+    borderRadius: 12,
+    padding: 4,
+  },
+  navBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    display: "grid",
+    placeItems: "center",
+    color: "var(--muted)",
+    transition: "background .15s, color .15s",
+  },
+  periodLabel: {
+    fontSize: 14,
+    fontWeight: 700,
+    color: "var(--ink)",
+    minWidth: 116,
+    textAlign: "center",
+    letterSpacing: "-0.01em",
+  },
+  allTimeBtn: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: "var(--muted)",
+    background: "var(--surface)",
+    border: "1px solid var(--line)",
+    padding: "9px 14px",
+    borderRadius: 11,
+    transition: "all .15s",
+  },
+  allTimeOn: {
+    background: "var(--accent)",
+    color: "#fff",
+    borderColor: "transparent",
+    boxShadow: "0 6px 16px var(--accent-soft)",
+  },
+
   grid: {
     display: "grid",
     gridTemplateColumns: "minmax(0, 0.82fr) minmax(0, 1fr)",
     gap: "var(--gap)",
     alignItems: "start",
+  },
+  col: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "var(--gap)",
   },
   card: {
     background: "var(--surface)",
@@ -704,6 +1134,28 @@ const S = {
     color: "var(--muted)",
     marginBottom: 7,
   },
+  opt: { fontWeight: 500, color: "var(--faint)" },
+  catWrap: { display: "flex", flexWrap: "wrap", gap: 7 },
+  catChip: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 7,
+    padding: "8px 12px",
+    borderRadius: 999,
+    fontSize: 13,
+    fontWeight: 600,
+    color: "var(--muted)",
+    background: "var(--surface)",
+    border: "1.5px solid var(--line)",
+    transition: "all .15s",
+  },
+  dot: {
+    width: 9,
+    height: 9,
+    borderRadius: "50%",
+    flexShrink: 0,
+  },
+
   input: {
     width: "100%",
     padding: "13px 14px",
@@ -744,9 +1196,30 @@ const S = {
 
   histHead: {
     display: "flex",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     marginBottom: 16,
+    gap: 12,
+  },
+  histSub: {
+    fontSize: 12.5,
+    fontWeight: 600,
+    marginTop: 5,
+    display: "flex",
+    alignItems: "center",
+    gap: 7,
+    flexWrap: "wrap",
+  },
+  histDot: { color: "var(--faint)" },
+  periodTag: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: "var(--muted)",
+    background: "var(--bg)",
+    border: "1px solid var(--line)",
+    padding: "5px 10px",
+    borderRadius: 999,
+    whiteSpace: "nowrap",
   },
   clearBtn: {
     fontSize: 12.5,
@@ -755,6 +1228,70 @@ const S = {
     padding: "5px 10px",
     borderRadius: 8,
     border: "1px solid var(--line)",
+    whiteSpace: "nowrap",
+    flexShrink: 0,
+  },
+
+  breakWrap: {
+    display: "flex",
+    alignItems: "center",
+    gap: 22,
+  },
+  donutCenter: {
+    position: "absolute",
+    inset: 0,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  donutLab: {
+    fontSize: 11.5,
+    fontWeight: 600,
+    color: "var(--muted)",
+  },
+  donutVal: {
+    fontSize: 20,
+    fontWeight: 800,
+    letterSpacing: "-0.02em",
+    color: "var(--ink)",
+    marginTop: 2,
+  },
+  legend: {
+    flex: 1,
+    minWidth: 0,
+    display: "flex",
+    flexDirection: "column",
+    gap: 9,
+  },
+  legendRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 9,
+    fontSize: 13,
+  },
+  legendLabel: {
+    fontWeight: 600,
+    color: "var(--ink)",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    flex: 1,
+    minWidth: 0,
+  },
+  legendPct: {
+    fontWeight: 700,
+    color: "var(--muted)",
+    fontSize: 12.5,
+    width: 36,
+    textAlign: "right",
+  },
+  legendVal: {
+    fontWeight: 600,
+    color: "var(--ink)",
+    fontSize: 12.5,
+    width: 92,
+    textAlign: "right",
   },
 
   list: { display: "flex", flexDirection: "column", gap: 4 },
@@ -785,12 +1322,22 @@ const S = {
     overflow: "hidden",
     textOverflow: "ellipsis",
   },
-  rowTime: {
+  rowMeta: {
     fontSize: 12,
     color: "var(--muted)",
     fontWeight: 500,
-    marginTop: 1,
+    marginTop: 2,
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
   },
+  miniDot: {
+    width: 7,
+    height: 7,
+    borderRadius: "50%",
+    flexShrink: 0,
+  },
+  rowCat: { fontWeight: 600 },
   rowAmt: {
     fontSize: 15,
     fontWeight: 700,
@@ -809,6 +1356,7 @@ const S = {
   },
 
   empty: { textAlign: "center", padding: "38px 20px 30px" },
+  emptySm: { textAlign: "center", padding: "20px 16px 14px" },
   emptyIcon: {
     width: 60,
     height: 60,

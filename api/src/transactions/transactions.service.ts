@@ -18,6 +18,7 @@ export class TransactionsService {
         amount: dto.amount,
         description: dto.description,
         type: dto.type,
+        category: dto.category ?? null,
       },
     });
   }

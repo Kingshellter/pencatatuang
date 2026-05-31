@@ -27,7 +27,8 @@ Kembalikan keluaran HANYA dalam JSON dengan struktur ini:
 {
   "amount": <angka murni total belanja>,
   "description": "<ringkasan benda di struk, maksimal 5-7 kata>",
-  "type": "expense"
+  "type": "expense",
+  "category": "<pilih SATU dari: food, transport, shopping, bills, fun, health, other-out>"
 }`;
 
       const imageParts = [
@@ -64,7 +65,8 @@ Keluarkan HANYA format JSON valid ini:
 {
   "amount": <nominal angka dari teks>,
   "description": "<deskripsi singkat>",
-  "type": "<income atau expense, pilih salah satu sesuai logika kalimat tersebut>"
+  "type": "<income atau expense, pilih salah satu sesuai logika kalimat tersebut>",
+  "category": "<jika type income pilih salah satu dari: salary, business, gift, other-in. Jika expense pilih salah satu dari: food, transport, shopping, bills, fun, health, other-out>"
 }`;
 
       const result = await model.generateContent(prompt);
